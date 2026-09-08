@@ -58,6 +58,10 @@ def row_to_dict(row):
 
 def validate_telegram_init_data(init_data):
 
+    # --------------------------------------
+    # GET BOT TOKEN FROM RENDER
+    # --------------------------------------
+
     bot_token = os.environ.get(
         "TELEGRAM_BOT_TOKEN"
     )
@@ -65,115 +69,9 @@ def validate_telegram_init_data(init_data):
     if not bot_token:
 
         print(
-            "ERROR: TELEGRAM_BOT_TOKEN is missing."
+            "AUTH ERROR 1: TELEGRAM_BOT_TOKEN is missing."
         )
 
-        return None
-
-
-    if not init_data:
-
-        print(
-            "ERROR: initData is empty."
-        )
-
-        return None
-
-
-    try:
-
-        # Parse the raw Telegram query string.
-        parsed = urllib.parse.parse_qsl(
-            init_data,
-            keep_blank_values=True
-        )
-
-
-        # Convert to dictionary while preserving
-        # the decoded Telegram values.
-        data = {}
-
-        for key, value in parsed:
-
-            data[key] = value
-
-
-        # Telegram's bot-token validation uses hash.
-        received_hash = data.get(
-            "hash"
-        )
-
-
-        if not received_hash:
-
-            print(
-                "ERROR: Telegram hash is missing."
-            )
-
-            return None
-
-
-        # --------------------------------------
-        # CREATE DATA CHECK STRING
-        # --------------------------------------
-
-        data_check_items = []
-
-
-        for key in sorted(data.keys()):
-
-            if key == "hash":
-
-                continue
-
-
-            data_check_items.append(
-                f"{key}={data[key]}"
-            )
-
-
-        data_check_string = "\n".join(
-            data_check_items
-        )
-
-
-        # --------------------------------------
-        # CREATE TELEGRAM SECRET KEY
-        # --------------------------------------
-
-        secret_key = hmac.new(
-
-            b"WebAppData",
-
-            bot_token.encode(
-                "utf-8"
-            ),
-
-            hashlib.sha256
-
-        ).digest()
-
-
-        # --------------------------------------
-        # CALCULATE EXPECTED HASH
-        # --------------------------------------
-
-        calculated_hash = hmac.new(
-
-# ==========================================
-# TELEGRAM INIT DATA VALIDATION
-# ==========================================
-
-def validate_telegram_init_data(init_data):
-
-    # --------------------------------------
-    # GET BOT TOKEN FROM RENDER
-    # --------------------------------------
-
-    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
-
-    if not bot_token:
-        print("AUTH ERROR 1: TELEGRAM_BOT_TOKEN is missing.")
         return None
 
     # Remove accidental spaces/newlines
@@ -184,7 +82,11 @@ def validate_telegram_init_data(init_data):
     # --------------------------------------
 
     if not init_data:
-        print("AUTH ERROR 2: Telegram initData is empty.")
+
+        print(
+            "AUTH ERROR 2: Telegram initData is empty."
+        )
+
         return None
 
     print(
@@ -206,13 +108,16 @@ def validate_telegram_init_data(init_data):
         data = {}
 
         for key, value in parsed:
+
             data[key] = value
 
         # ----------------------------------
         # CHECK HASH
         # ----------------------------------
 
-        received_hash = data.get("hash")
+        received_hash = data.get(
+            "hash"
+        )
 
         if not received_hash:
 
@@ -240,6 +145,7 @@ def validate_telegram_init_data(init_data):
         for key in sorted(data.keys()):
 
             if key == "hash":
+
                 continue
 
             data_check_items.append(
@@ -255,9 +161,15 @@ def validate_telegram_init_data(init_data):
         # ----------------------------------
 
         secret_key = hmac.new(
+
             b"WebAppData",
-            bot_token.encode("utf-8"),
+
+            bot_token.encode(
+                "utf-8"
+            ),
+
             hashlib.sha256
+
         ).digest()
 
         # ----------------------------------
@@ -265,13 +177,19 @@ def validate_telegram_init_data(init_data):
         # ----------------------------------
 
         calculated_hash = hmac.new(
+
             secret_key,
-            data_check_string.encode("utf-8"),
+
+            data_check_string.encode(
+                "utf-8"
+            ),
+
             hashlib.sha256
+
         ).hexdigest()
 
         # ----------------------------------
-        # COMPARE HASH
+        # COMPARE HASHES
         # ----------------------------------
 
         if not hmac.compare_digest(
@@ -303,7 +221,9 @@ def validate_telegram_init_data(init_data):
         # CHECK AUTH DATE
         # ----------------------------------
 
-        auth_date = data.get("auth_date")
+        auth_date = data.get(
+            "auth_date"
+        )
 
         if not auth_date:
 
@@ -315,9 +235,14 @@ def validate_telegram_init_data(init_data):
 
         try:
 
-            auth_timestamp = int(auth_date)
+            auth_timestamp = int(
+                auth_date
+            )
 
-        except (TypeError, ValueError):
+        except (
+            TypeError,
+            ValueError
+        ):
 
             print(
                 "AUTH ERROR 6: Invalid auth_date."
@@ -326,7 +251,7 @@ def validate_telegram_init_data(init_data):
             return None
 
         # ----------------------------------
-        # CHECK 24-HOUR EXPIRATION
+        # CHECK AUTH DATA AGE
         # ----------------------------------
 
         age = time.time() - auth_timestamp
@@ -337,6 +262,9 @@ def validate_telegram_init_data(init_data):
             "seconds"
         )
 
+        # Authentication data older than
+        # 24 hours is rejected.
+
         if age > 86400:
 
             print(
@@ -344,6 +272,8 @@ def validate_telegram_init_data(init_data):
             )
 
             return None
+
+        # Prevent obviously future-dated data.
 
         if age < -60:
 
@@ -357,7 +287,9 @@ def validate_telegram_init_data(init_data):
         # GET TELEGRAM USER
         # ----------------------------------
 
-        user_json = data.get("user")
+        user_json = data.get(
+            "user"
+        )
 
         if not user_json:
 
@@ -382,10 +314,12 @@ def validate_telegram_init_data(init_data):
             return None
 
         # ----------------------------------
-        # CHECK USER ID
+        # CHECK TELEGRAM USER ID
         # ----------------------------------
 
-        telegram_id = user_data.get("id")
+        telegram_id = user_data.get(
+            "id"
+        )
 
         if not telegram_id:
 
@@ -394,6 +328,10 @@ def validate_telegram_init_data(init_data):
             )
 
             return None
+
+        # ----------------------------------
+        # AUTHENTICATION SUCCESS
+        # ----------------------------------
 
         print(
             "AUTH SUCCESS: Telegram user authenticated."
@@ -450,18 +388,15 @@ def create_or_get_user():
         silent=True
     ) or {}
 
-
     init_data = data.get(
         "initData"
     )
-
 
     telegram_user = (
         validate_telegram_init_data(
             init_data
         )
     )
-
 
     if not telegram_user:
 
@@ -474,29 +409,24 @@ def create_or_get_user():
 
         }), 401
 
-
     telegram_id = telegram_user.get(
         "id"
     )
-
 
     username = telegram_user.get(
         "username",
         ""
     )
 
-
     first_name = telegram_user.get(
         "first_name",
         ""
     )
 
-
     last_name = telegram_user.get(
         "last_name",
         ""
     )
-
 
     user = get_or_create_user(
 
@@ -509,7 +439,6 @@ def create_or_get_user():
         last_name=last_name
 
     )
-
 
     return jsonify({
 
@@ -535,7 +464,6 @@ def balance(telegram_id):
         telegram_id
     )
 
-
     if not user:
 
         return jsonify({
@@ -546,7 +474,6 @@ def balance(telegram_id):
                 "User not found"
 
         }), 404
-
 
     return jsonify({
 
@@ -585,7 +512,6 @@ def test_user(telegram_id):
 
     )
 
-
     return jsonify({
 
         "success": True,
@@ -610,7 +536,6 @@ def play_slots():
         silent=True
     ) or {}
 
-
     # --------------------------------------
     # AUTHENTICATE TELEGRAM USER
     # --------------------------------------
@@ -619,13 +544,11 @@ def play_slots():
         "initData"
     )
 
-
     telegram_user = (
         validate_telegram_init_data(
             init_data
         )
     )
-
 
     if not telegram_user:
 
@@ -638,11 +561,9 @@ def play_slots():
 
         }), 401
 
-
     telegram_id = telegram_user.get(
         "id"
     )
-
 
     if not telegram_id:
 
@@ -654,7 +575,6 @@ def play_slots():
                 "Telegram user ID not found."
 
         }), 400
-
 
     # --------------------------------------
     # READ BET
@@ -683,7 +603,6 @@ def play_slots():
 
         }), 400
 
-
     # --------------------------------------
     # BET VALIDATION
     # --------------------------------------
@@ -699,7 +618,6 @@ def play_slots():
 
         }), 400
 
-
     if bet_amount > 1000:
 
         return jsonify({
@@ -711,7 +629,6 @@ def play_slots():
 
         }), 400
 
-
     # --------------------------------------
     # GET USER
     # --------------------------------------
@@ -719,7 +636,6 @@ def play_slots():
     user = get_user(
         telegram_id
     )
-
 
     if not user:
 
@@ -744,11 +660,9 @@ def play_slots():
 
         )
 
-
     current_balance = get_balance(
         telegram_id
     )
-
 
     if current_balance is None:
 
@@ -760,7 +674,6 @@ def play_slots():
                 "Balance could not be found."
 
         }), 500
-
 
     # --------------------------------------
     # CHECK BALANCE
@@ -780,7 +693,6 @@ def play_slots():
 
         }), 400
 
-
     # ======================================
     # GENERATE SLOTS RESULT
     # ======================================
@@ -796,7 +708,6 @@ def play_slots():
 
     ]
 
-
     reels = [
 
         random.choice(symbols),
@@ -807,15 +718,14 @@ def play_slots():
 
     ]
 
-
     # ======================================
     # CALCULATE WIN
     # ======================================
 
     win_amount = 0
 
-
     # Three identical symbols.
+
     if (
         reels[0] == reels[1]
         and
@@ -826,8 +736,8 @@ def play_slots():
             bet_amount * 5
         )
 
-
     # Two identical symbols.
+
     elif (
         reels[0] == reels[1]
         or
@@ -839,7 +749,6 @@ def play_slots():
         win_amount = (
             bet_amount * 2
         )
-
 
     # ======================================
     # REMOVE BET
@@ -857,7 +766,6 @@ def play_slots():
 
     )
 
-
     if new_balance is None:
 
         return jsonify({
@@ -868,7 +776,6 @@ def play_slots():
                 "Could not process demo bet."
 
         }), 500
-
 
     # ======================================
     # ADD WIN
@@ -888,7 +795,6 @@ def play_slots():
 
         )
 
-
         if new_balance is None:
 
             return jsonify({
@@ -900,7 +806,6 @@ def play_slots():
 
             }), 500
 
-
     # ======================================
     # SAVE GAME HISTORY
     # ======================================
@@ -909,9 +814,7 @@ def play_slots():
         DATABASE_FILE
     )
 
-
     cursor = connection.cursor()
-
 
     cursor.execute(
         """
@@ -940,11 +843,9 @@ def play_slots():
         )
     )
 
-
     connection.commit()
 
     connection.close()
-
 
     # ======================================
     # RETURN RESULT
@@ -969,7 +870,6 @@ def play_slots():
         message = (
             "No winning combination."
         )
-
 
     return jsonify({
 
@@ -1009,7 +909,6 @@ if __name__ == "__main__":
         )
     )
 
-
     app.run(
 
         host="0.0.0.0",
@@ -1018,4 +917,4 @@ if __name__ == "__main__":
 
         debug=False
 
-    )
+        )
