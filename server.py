@@ -811,6 +811,249 @@ def play_slots():
 
             }), 500
 
+
+    # ==========================================
+# MINES - CASH OUT
+# ==========================================
+
+@app.route(
+    "/api/game/mines/cashout",
+    methods=["POST"]
+)
+def cashout_mines():
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    # --------------------------------------
+    # AUTHENTICATE TELEGRAM USER
+    # --------------------------------------
+
+    init_data = data.get(
+        "initData"
+    )
+
+    telegram_user = validate_telegram_init_data(
+        init_data
+    )
+
+    if not telegram_user:
+
+        return jsonify({
+            "success": False,
+            "error": "Telegram authentication failed."
+        }), 401
+
+    telegram_id = telegram_user.get("id")
+
+    if not telegram_id:
+
+        return jsonify({
+            "success": False,
+            "error": "Telegram user ID not found."
+        }), 400
+
+    # --------------------------------------
+    # READ GAME ID
+    # --------------------------------------
+
+    try:
+
+        game_id = int(
+            data.get(
+                "game_id",
+                0
+            )
+        )
+
+    except (
+        TypeError,
+        ValueError
+    ):
+
+        return jsonify({
+            "success": False,
+            "error": "Invalid game ID."
+        }), 400
+
+    if game_id <= 0:
+
+        return jsonify({
+            "success": False,
+            "error": "Invalid game ID."
+        }), 400
+
+    # --------------------------------------
+    # GET GAME
+    # --------------------------------------
+
+    game = get_mines_game(
+        game_id,
+        telegram_id
+    )
+
+    if not game:
+
+        return jsonify({
+            "success": False,
+            "error": "Mines game not found."
+        }), 404
+
+    # --------------------------------------
+    # CHECK GAME STATUS
+    # --------------------------------------
+
+    if game["status"] != "active":
+
+        return jsonify({
+            "success": False,
+            "error": "This Mines game is no longer active."
+        }), 400
+
+    # --------------------------------------
+    # LOAD REVEALED TILES
+    # --------------------------------------
+
+    try:
+
+        revealed_tiles = json.loads(
+            game["revealed_json"]
+        )
+
+    except (
+        TypeError,
+        ValueError,
+        json.JSONDecodeError
+    ):
+
+        revealed_tiles = []
+
+    # --------------------------------------
+    # REQUIRE AT LEAST ONE SAFE TILE
+    # --------------------------------------
+
+    if len(revealed_tiles) < 1:
+
+        return jsonify({
+            "success": False,
+            "error":
+                "Reveal at least one safe tile before cashing out."
+        }), 400
+
+    # --------------------------------------
+    # GET STORED POTENTIAL WIN
+    # --------------------------------------
+
+    potential_win = int(
+        game["potential_win"]
+    )
+
+    multiplier = float(
+        game["multiplier"]
+    )
+
+    bet_amount = int(
+        game["bet_amount"]
+    )
+
+    # --------------------------------------
+    # SAFETY CHECK
+    # --------------------------------------
+
+    if potential_win <= 0:
+
+        return jsonify({
+            "success": False,
+            "error":
+                "Invalid potential win amount."
+        }), 400
+
+    # --------------------------------------
+    # PAY DEMO WIN
+    # --------------------------------------
+
+    new_balance = change_balance(
+
+        telegram_id,
+
+        potential_win,
+
+        "game_win",
+
+        "Mines demo cash out"
+
+    )
+
+    if new_balance is None:
+
+        return jsonify({
+            "success": False,
+            "error":
+                "Could not process demo cash out."
+        }), 500
+
+    # --------------------------------------
+    # MARK GAME AS CASHED OUT
+    # --------------------------------------
+
+    finished = finish_mines_game(
+
+        game_id,
+
+        telegram_id,
+
+        "cashed_out"
+
+    )
+
+    if not finished:
+
+        # IMPORTANT:
+        # The balance has already been credited.
+        #
+        # We don't deduct it again here.
+        #
+        # This should only occur in an
+        # unexpected database-state situation.
+
+        print(
+            "MINES WARNING: Balance paid but "
+            "game status was not updated."
+        )
+
+    # --------------------------------------
+    # RETURN RESULT
+    # --------------------------------------
+
+    return jsonify({
+
+        "success": True,
+
+        "result": "cashout",
+
+        "game_id": game_id,
+
+        "status": "cashed_out",
+
+        "bet": bet_amount,
+
+        "revealed_count":
+            len(revealed_tiles),
+
+        "multiplier":
+            multiplier,
+
+        "win_amount":
+            potential_win,
+
+        "balance":
+            new_balance,
+
+        "message":
+            "Demo winnings successfully cashed out."
+
+    })
     # ======================================
     # SAVE GAME HISTORY
     # ======================================
