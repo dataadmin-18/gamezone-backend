@@ -18,6 +18,9 @@ from database import (
     change_balance,
     create_mines_game,
     get_active_mines_game,
+    get_mines_game,
+    update_mines_game,
+    finish_mines_game,
     DATABASE_FILE
 )
 
@@ -1319,6 +1322,432 @@ def start_mines():
 
         "status":
             "active"
+
+    })
+
+
+
+# ==========================================
+# MINES - REVEAL TILE
+# ==========================================
+
+@app.route(
+    "/api/game/mines/reveal",
+    methods=["POST"]
+)
+def reveal_mines_tile():
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    # --------------------------------------
+    # AUTHENTICATE TELEGRAM USER
+    # --------------------------------------
+
+    init_data = data.get(
+        "initData"
+    )
+
+    telegram_user = validate_telegram_init_data(
+        init_data
+    )
+
+    if not telegram_user:
+
+        return jsonify({
+            "success": False,
+            "error": "Telegram authentication failed."
+        }), 401
+
+    telegram_id = telegram_user.get("id")
+
+    if not telegram_id:
+
+        return jsonify({
+            "success": False,
+            "error": "Telegram user ID not found."
+        }), 400
+
+    # --------------------------------------
+    # READ GAME ID
+    # --------------------------------------
+
+    try:
+
+        game_id = int(
+            data.get(
+                "game_id",
+                0
+            )
+        )
+
+    except (
+        TypeError,
+        ValueError
+    ):
+
+        return jsonify({
+            "success": False,
+            "error": "Invalid game ID."
+        }), 400
+
+    if game_id <= 0:
+
+        return jsonify({
+            "success": False,
+            "error": "Invalid game ID."
+        }), 400
+
+    # --------------------------------------
+    # READ TILE
+    # --------------------------------------
+
+    try:
+
+        tile = int(
+            data.get(
+                "tile",
+                -1
+            )
+        )
+
+    except (
+        TypeError,
+        ValueError
+    ):
+
+        return jsonify({
+            "success": False,
+            "error": "Invalid tile."
+        }), 400
+
+    # --------------------------------------
+    # VALIDATE TILE
+    # --------------------------------------
+
+    if tile < 0 or tile > 24:
+
+        return jsonify({
+            "success": False,
+            "error": "Tile must be between 0 and 24."
+        }), 400
+
+    # --------------------------------------
+    # GET ACTIVE GAME
+    # --------------------------------------
+
+    game = get_mines_game(
+        game_id,
+        telegram_id
+    )
+
+    if not game:
+
+        return jsonify({
+            "success": False,
+            "error": "Mines game not found."
+        }), 404
+
+    if game["status"] != "active":
+
+        return jsonify({
+            "success": False,
+            "error": "This Mines game is no longer active."
+        }), 400
+
+    # --------------------------------------
+    # LOAD HIDDEN MINES
+    # --------------------------------------
+
+    try:
+
+        mines = json.loads(
+            game["mines_json"]
+        )
+
+    except (
+        TypeError,
+        ValueError,
+        json.JSONDecodeError
+    ):
+
+        return jsonify({
+            "success": False,
+            "error": "Mines game data is corrupted."
+        }), 500
+
+    # --------------------------------------
+    # LOAD REVEALED TILES
+    # --------------------------------------
+
+    try:
+
+        revealed_tiles = json.loads(
+            game["revealed_json"]
+        )
+
+    except (
+        TypeError,
+        ValueError,
+        json.JSONDecodeError
+    ):
+
+        revealed_tiles = []
+
+    # --------------------------------------
+    # PREVENT DOUBLE REVEAL
+    # --------------------------------------
+
+    if tile in revealed_tiles:
+
+        return jsonify({
+            "success": False,
+            "error": "Tile has already been revealed."
+        }), 400
+
+    # --------------------------------------
+    # CHECK FOR MINE
+    # --------------------------------------
+
+    if tile in mines:
+
+        # ----------------------------------
+        # PLAYER HIT A MINE
+        # ----------------------------------
+
+        finish_mines_game(
+            game_id,
+            telegram_id,
+            "lost"
+        )
+
+        current_balance = get_balance(
+            telegram_id
+        )
+
+        return jsonify({
+
+            "success": True,
+
+            "result": "mine",
+
+            "tile": tile,
+
+            "game_id": game_id,
+
+            "status": "lost",
+
+            "balance": current_balance,
+
+            "message": "Mine hit. Game over.",
+
+            # The frontend can use these to
+            # display the mine positions after
+            # the game has ended.
+            "mines": mines
+
+        })
+
+    # --------------------------------------
+    # SAFE TILE
+    # --------------------------------------
+
+    revealed_tiles.append(
+        tile
+    )
+
+    # --------------------------------------
+    # CALCULATE MULTIPLIER
+    # --------------------------------------
+    #
+    # This is a DEMO game using virtual
+    # credits only.
+    #
+    # More safe tiles = larger multiplier.
+    #
+    # --------------------------------------
+
+    safe_tiles = len(
+        revealed_tiles
+    )
+
+    mine_count = int(
+        game["mine_count"]
+    )
+
+    safe_tile_count = 25 - mine_count
+
+    if safe_tile_count <= 0:
+
+        safe_tile_count = 1
+
+    # Simple progressive multiplier.
+    #
+    # Example with 5 mines:
+    #
+    # 1 safe tile  -> 1.20x
+    # 2 safe tiles -> 1.44x
+    # 3 safe tiles -> 1.73x
+    #
+    multiplier = round(
+        1.0 + (
+            safe_tiles * 0.20
+        ),
+        2
+    )
+
+    # --------------------------------------
+    # CALCULATE POTENTIAL WIN
+    # --------------------------------------
+
+    bet_amount = int(
+        game["bet_amount"]
+    )
+
+    potential_win = int(
+        bet_amount * multiplier
+    )
+
+    # --------------------------------------
+    # CHECK IF ALL SAFE TILES ARE REVEALED
+    # --------------------------------------
+
+    if safe_tiles >= safe_tile_count:
+
+        # ----------------------------------
+        # AUTOMATIC WIN
+        # ----------------------------------
+
+        new_balance = change_balance(
+
+            telegram_id,
+
+            potential_win,
+
+            "game_win",
+
+            "Mines demo automatic win"
+
+        )
+
+        if new_balance is None:
+
+            return jsonify({
+                "success": False,
+                "error": "Could not process demo win."
+            }), 500
+
+        update_mines_game(
+
+            game_id,
+
+            telegram_id,
+
+            revealed_tiles,
+
+            multiplier,
+
+            potential_win
+
+        )
+
+        finish_mines_game(
+
+            game_id,
+
+            telegram_id,
+
+            "won"
+
+        )
+
+        return jsonify({
+
+            "success": True,
+
+            "result": "safe",
+
+            "tile": tile,
+
+            "game_id": game_id,
+
+            "status": "won",
+
+            "multiplier": multiplier,
+
+            "potential_win": potential_win,
+
+            "win_amount": potential_win,
+
+            "balance": new_balance,
+
+            "revealed": revealed_tiles,
+
+            "mines": mines,
+
+            "message": "All safe tiles revealed. You won!"
+
+        })
+
+    # --------------------------------------
+    # SAVE SAFE TILE
+    # --------------------------------------
+
+    updated = update_mines_game(
+
+        game_id,
+
+        telegram_id,
+
+        revealed_tiles,
+
+        multiplier,
+
+        potential_win
+
+    )
+
+    if not updated:
+
+        return jsonify({
+            "success": False,
+            "error": "Could not update Mines game."
+        }), 500
+
+    # --------------------------------------
+    # GET CURRENT BALANCE
+    # --------------------------------------
+
+    current_balance = get_balance(
+        telegram_id
+    )
+
+    # --------------------------------------
+    # RETURN SAFE RESULT
+    # --------------------------------------
+
+    return jsonify({
+
+        "success": True,
+
+        "result": "safe",
+
+        "tile": tile,
+
+        "game_id": game_id,
+
+        "status": "active",
+
+        "multiplier": multiplier,
+
+        "potential_win": potential_win,
+
+        "balance": current_balance,
+
+        "revealed": revealed_tiles,
+
+        "message": "Safe! Continue or cash out."
 
     })
 
