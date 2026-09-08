@@ -1178,6 +1178,138 @@ def cashout_mines():
             message
 
     })
+    # ==========================================
+# MINES - GET ACTIVE GAME
+# ==========================================
+
+@app.route(
+    "/api/game/mines/active",
+    methods=["POST"]
+)
+def get_active_mines():
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    # --------------------------------------
+    # AUTHENTICATE TELEGRAM USER
+    # --------------------------------------
+
+    init_data = data.get(
+        "initData"
+    )
+
+    telegram_user = validate_telegram_init_data(
+        init_data
+    )
+
+    if not telegram_user:
+
+        return jsonify({
+            "success": False,
+            "error": "Telegram authentication failed."
+        }), 401
+
+    telegram_id = telegram_user.get(
+        "id"
+    )
+
+    if not telegram_id:
+
+        return jsonify({
+            "success": False,
+            "error": "Telegram user ID not found."
+        }), 400
+
+    # --------------------------------------
+    # FIND ACTIVE MINES GAME
+    # --------------------------------------
+
+    game = get_active_mines_game(
+        telegram_id
+    )
+
+    # --------------------------------------
+    # NO ACTIVE GAME
+    # --------------------------------------
+
+    if not game:
+
+        return jsonify({
+            "success": True,
+            "active": False,
+            "message": "No active Mines game."
+        })
+
+    # --------------------------------------
+    # LOAD REVEALED TILES
+    # --------------------------------------
+
+    try:
+
+        revealed_tiles = json.loads(
+            game["revealed_json"]
+        )
+
+    except (
+        TypeError,
+        ValueError,
+        json.JSONDecodeError
+    ):
+
+        revealed_tiles = []
+
+    # --------------------------------------
+    # GET CURRENT BALANCE
+    # --------------------------------------
+
+    current_balance = get_balance(
+        telegram_id
+    )
+
+    # --------------------------------------
+    # RETURN ACTIVE GAME
+    # --------------------------------------
+    #
+    # IMPORTANT:
+    # Never send mines while game
+    # is still active.
+    #
+    # --------------------------------------
+
+    return jsonify({
+
+        "success": True,
+
+        "active": True,
+
+        "game": "mines",
+
+        "game_id": game["id"],
+
+        "grid_size": game["grid_size"],
+
+        "mine_count": game["mine_count"],
+
+        "bet": game["bet_amount"],
+
+        "balance": current_balance,
+
+        "revealed": revealed_tiles,
+
+        "multiplier": game["multiplier"],
+
+        "potential_win": game["potential_win"],
+
+        "status": game["status"]
+
+    })
+
+
+# ==========================================
+# MINES - START GAME
+# ==========================================
 
 
 
