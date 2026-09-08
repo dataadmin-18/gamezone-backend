@@ -160,20 +160,119 @@ def validate_telegram_init_data(init_data):
 
         calculated_hash = hmac.new(
 
-            secret_key,
+# ==========================================
+# TELEGRAM INIT DATA VALIDATION
+# ==========================================
 
-            data_check_string.encode(
-                "utf-8"
-            ),
+def validate_telegram_init_data(init_data):
 
+    # --------------------------------------
+    # GET BOT TOKEN FROM RENDER
+    # --------------------------------------
+
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+
+    if not bot_token:
+        print("AUTH ERROR 1: TELEGRAM_BOT_TOKEN is missing.")
+        return None
+
+    # Remove accidental spaces/newlines
+    bot_token = bot_token.strip()
+
+    # --------------------------------------
+    # CHECK INIT DATA
+    # --------------------------------------
+
+    if not init_data:
+        print("AUTH ERROR 2: Telegram initData is empty.")
+        return None
+
+    print(
+        "AUTH DEBUG: initData received, length =",
+        len(init_data)
+    )
+
+    try:
+
+        # ----------------------------------
+        # PARSE TELEGRAM INIT DATA
+        # ----------------------------------
+
+        parsed = urllib.parse.parse_qsl(
+            init_data,
+            keep_blank_values=True
+        )
+
+        data = {}
+
+        for key, value in parsed:
+            data[key] = value
+
+        # ----------------------------------
+        # CHECK HASH
+        # ----------------------------------
+
+        received_hash = data.get("hash")
+
+        if not received_hash:
+
+            print(
+                "AUTH ERROR 3: Telegram hash is missing."
+            )
+
+            print(
+                "AUTH DEBUG: received fields =",
+                sorted(data.keys())
+            )
+
+            return None
+
+        print(
+            "AUTH DEBUG: Telegram hash received."
+        )
+
+        # ----------------------------------
+        # CREATE DATA CHECK STRING
+        # ----------------------------------
+
+        data_check_items = []
+
+        for key in sorted(data.keys()):
+
+            if key == "hash":
+                continue
+
+            data_check_items.append(
+                f"{key}={data[key]}"
+            )
+
+        data_check_string = "\n".join(
+            data_check_items
+        )
+
+        # ----------------------------------
+        # CREATE SECRET KEY
+        # ----------------------------------
+
+        secret_key = hmac.new(
+            b"WebAppData",
+            bot_token.encode("utf-8"),
             hashlib.sha256
+        ).digest()
 
+        # ----------------------------------
+        # CALCULATE TELEGRAM HASH
+        # ----------------------------------
+
+        calculated_hash = hmac.new(
+            secret_key,
+            data_check_string.encode("utf-8"),
+            hashlib.sha256
         ).hexdigest()
 
-
-        # --------------------------------------
-        # COMPARE HASHES
-        # --------------------------------------
+        # ----------------------------------
+        # COMPARE HASH
+        # ----------------------------------
 
         if not hmac.compare_digest(
             calculated_hash,
@@ -181,95 +280,136 @@ def validate_telegram_init_data(init_data):
         ):
 
             print(
-                "ERROR: Telegram hash validation failed."
+                "AUTH ERROR 4: Telegram hash validation failed."
+            )
+
+            print(
+                "AUTH DEBUG: initData length =",
+                len(init_data)
+            )
+
+            print(
+                "AUTH DEBUG: fields =",
+                sorted(data.keys())
             )
 
             return None
 
+        print(
+            "AUTH DEBUG: Telegram hash validation PASSED."
+        )
 
-        # --------------------------------------
+        # ----------------------------------
         # CHECK AUTH DATE
-        # --------------------------------------
+        # ----------------------------------
 
-        auth_date = data.get(
-            "auth_date"
+        auth_date = data.get("auth_date")
+
+        if not auth_date:
+
+            print(
+                "AUTH ERROR 5: auth_date is missing."
+            )
+
+            return None
+
+        try:
+
+            auth_timestamp = int(auth_date)
+
+        except (TypeError, ValueError):
+
+            print(
+                "AUTH ERROR 6: Invalid auth_date."
+            )
+
+            return None
+
+        # ----------------------------------
+        # CHECK 24-HOUR EXPIRATION
+        # ----------------------------------
+
+        age = time.time() - auth_timestamp
+
+        print(
+            "AUTH DEBUG: auth data age =",
+            int(age),
+            "seconds"
         )
 
+        if age > 86400:
 
-        if auth_date:
+            print(
+                "AUTH ERROR 7: Telegram initData expired."
+            )
 
-            try:
+            return None
 
-                auth_timestamp = int(
-                    auth_date
-                )
+        if age < -60:
 
+            print(
+                "AUTH ERROR 8: Telegram auth_date is in the future."
+            )
 
-                # Authentication data older than
-                # 24 hours is rejected.
-                if (
-                    time.time()
-                    - auth_timestamp
-                    > 86400
-                ):
+            return None
 
-                    print(
-                        "ERROR: Telegram initData expired."
-                    )
-
-                    return None
-
-
-            except ValueError:
-
-                print(
-                    "ERROR: Invalid auth_date."
-                )
-
-                return None
-
-
-        # --------------------------------------
+        # ----------------------------------
         # GET TELEGRAM USER
-        # --------------------------------------
+        # ----------------------------------
 
-        user_json = data.get(
-            "user"
-        )
-
+        user_json = data.get("user")
 
         if not user_json:
 
             print(
-                "ERROR: Telegram user data missing."
+                "AUTH ERROR 9: Telegram user data missing."
             )
 
             return None
 
+        try:
 
-        user_data = json.loads(
-            user_json
-        )
+            user_data = json.loads(
+                user_json
+            )
 
-
-        if not user_data.get(
-            "id"
-        ):
+        except json.JSONDecodeError:
 
             print(
-                "ERROR: Telegram user ID missing."
+                "AUTH ERROR 10: Telegram user JSON is invalid."
             )
 
             return None
 
+        # ----------------------------------
+        # CHECK USER ID
+        # ----------------------------------
+
+        telegram_id = user_data.get("id")
+
+        if not telegram_id:
+
+            print(
+                "AUTH ERROR 11: Telegram user ID missing."
+            )
+
+            return None
+
+        print(
+            "AUTH SUCCESS: Telegram user authenticated."
+        )
+
+        print(
+            "AUTH DEBUG: Telegram user ID =",
+            telegram_id
+        )
 
         return user_data
-
 
     except Exception as error:
 
         print(
-            "Telegram authentication exception:",
+            "AUTH ERROR 12: Unexpected authentication exception:",
             repr(error)
         )
 
