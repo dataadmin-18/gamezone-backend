@@ -16,6 +16,8 @@ from database import (
     get_user,
     get_balance,
     change_balance,
+    create_mines_game,
+    get_active_mines_game,
     DATABASE_FILE
 )
 
@@ -895,6 +897,430 @@ def play_slots():
 
     })
 
+
+
+# ==========================================
+# MINES - START GAME
+# ==========================================
+
+@app.route(
+    "/api/game/mines/start",
+    methods=["POST"]
+)
+def start_mines():
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+
+    # --------------------------------------
+    # AUTHENTICATE TELEGRAM USER
+    # --------------------------------------
+
+    init_data = data.get(
+        "initData"
+    )
+
+
+    telegram_user = (
+        validate_telegram_init_data(
+            init_data
+        )
+    )
+
+
+    if not telegram_user:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Telegram authentication failed."
+
+        }), 401
+
+
+    telegram_id = telegram_user.get(
+        "id"
+    )
+
+
+    if not telegram_id:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Telegram user ID not found."
+
+        }), 400
+
+
+    # --------------------------------------
+    # READ BET
+    # --------------------------------------
+
+    try:
+
+        bet_amount = int(
+            data.get(
+                "bet_amount",
+                0
+            )
+        )
+
+    except (
+        TypeError,
+        ValueError
+    ):
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Invalid bet amount."
+
+        }), 400
+
+
+    # --------------------------------------
+    # VALIDATE BET
+    # --------------------------------------
+
+    if bet_amount <= 0:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Bet must be greater than zero."
+
+        }), 400
+
+
+    if bet_amount > 1000:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Maximum demo bet is 1000 credits."
+
+        }), 400
+
+
+    # --------------------------------------
+    # READ MINE COUNT
+    # --------------------------------------
+
+    try:
+
+        mine_count = int(
+            data.get(
+                "mine_count",
+                5
+            )
+        )
+
+    except (
+        TypeError,
+        ValueError
+    ):
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Invalid mine count."
+
+        }), 400
+
+
+    # --------------------------------------
+    # VALIDATE MINE COUNT
+    # --------------------------------------
+
+    if mine_count < 1:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "There must be at least 1 mine."
+
+        }), 400
+
+
+    if mine_count > 20:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Maximum is 20 mines."
+
+        }), 400
+
+
+    # --------------------------------------
+    # CHECK FOR ACTIVE MINES GAME
+    # --------------------------------------
+
+    active_game = get_active_mines_game(
+        telegram_id
+    )
+
+
+    if active_game:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "You already have an active Mines game."
+
+        }), 400
+
+
+    # --------------------------------------
+    # GET USER
+    # --------------------------------------
+
+    user = get_user(
+        telegram_id
+    )
+
+
+    if not user:
+
+        user = get_or_create_user(
+
+            telegram_id=telegram_id,
+
+            username=telegram_user.get(
+                "username",
+                ""
+            ),
+
+            first_name=telegram_user.get(
+                "first_name",
+                ""
+            ),
+
+            last_name=telegram_user.get(
+                "last_name",
+                ""
+            )
+
+        )
+
+
+    # --------------------------------------
+    # CHECK BALANCE
+    # --------------------------------------
+
+    current_balance = get_balance(
+        telegram_id
+    )
+
+
+    if current_balance is None:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Balance could not be found."
+
+        }), 500
+
+
+    if current_balance < bet_amount:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Insufficient demo balance.",
+
+            "balance":
+                current_balance
+
+        }), 400
+
+
+    # --------------------------------------
+    # GENERATE HIDDEN MINES
+    # --------------------------------------
+    #
+    # The Mines are generated ONLY on the
+    # backend.
+    #
+    # The browser never receives this list.
+    #
+    # Grid positions:
+    #
+    # 0  1  2  3  4
+    # 5  6  7  8  9
+    # 10 11 12 13 14
+    # 15 16 17 18 19
+    # 20 21 22 23 24
+    #
+    # --------------------------------------
+
+    import secrets
+
+    all_positions = list(
+        range(25)
+    )
+
+
+    mines = secrets.SystemRandom().sample(
+        all_positions,
+        mine_count
+    )
+
+
+    # --------------------------------------
+    # REMOVE BET FROM BALANCE
+    # --------------------------------------
+
+    new_balance = change_balance(
+
+        telegram_id,
+
+        -bet_amount,
+
+        "game_bet",
+
+        "Mines demo bet"
+
+    )
+
+
+    if new_balance is None:
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Could not process demo bet."
+
+        }), 500
+
+
+    # --------------------------------------
+    # SAVE MINES GAME
+    # --------------------------------------
+
+    try:
+
+        game_id = create_mines_game(
+
+            telegram_id=telegram_id,
+
+            bet_amount=bet_amount,
+
+            mine_count=mine_count,
+
+            mines=mines
+
+        )
+
+    except Exception as error:
+
+        print(
+            "MINES ERROR: Could not create game:",
+            repr(error)
+        )
+
+
+        # Refund the demo bet if game
+        # creation fails.
+
+        change_balance(
+
+            telegram_id,
+
+            bet_amount,
+
+            "game_refund",
+
+            "Mines demo game creation failed"
+
+        )
+
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Could not create Mines game."
+
+        }), 500
+
+
+    # --------------------------------------
+    # RETURN SAFE GAME INFORMATION
+    # --------------------------------------
+    #
+    # IMPORTANT:
+    # Do NOT return "mines" here.
+    #
+    # The mine locations must remain
+    # secret on the server.
+    #
+    # --------------------------------------
+
+    return jsonify({
+
+        "success": True,
+
+        "game":
+            "mines",
+
+        "game_id":
+            game_id,
+
+        "grid_size":
+            25,
+
+        "mine_count":
+            mine_count,
+
+        "bet":
+            bet_amount,
+
+        "balance":
+            new_balance,
+
+        "revealed":
+            [],
+
+        "multiplier":
+            1.0,
+
+        "potential_win":
+            bet_amount,
+
+        "status":
+            "active"
+
+    })
 
 # ==========================================
 # START SERVER
